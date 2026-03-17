@@ -1,0 +1,53 @@
+# ------------------------
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ------------------------
+# virtual env
+.venv/
+venv/
+env/
+
+# ------------------------
+# build / dist
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ------------------------
+# tests / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ------------------------
+# notebooks / logs
+.ipynb_checkpoints/
+*.log
+
+# ------------------------
+# streamlit cache
+.streamlit/cache/
+
+# ------------------------
+# macos
+.DS_Store
+
+# ------------------------
+# ide
+.vscode/
+.idea/
+
+# ------------------------
+# local env files
+.env
+.env.*
+
+# ------------------------
+# optional local data exports
+*.parquet
+*.csv
