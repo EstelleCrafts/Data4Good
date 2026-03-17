@@ -2,3 +2,5 @@ pandas
 pyarrow
 streamlit
 plotly
+openai
+ecologits
