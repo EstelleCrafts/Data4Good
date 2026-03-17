@@ -6,6 +6,37 @@ import pyarrow.parquet as pq
 
 
 # ------------------------
+# arbre des appels (vue rapide)
+#
+# app.py::main()
+#   -> load_matches_with_categories()
+#      charge les duels A/B et les categories
+#
+#   -> compute_global_winrate()
+#      calcule le winrate global par modele
+#      -> _side_rows()
+#         transforme un duel A/B en 2 lignes modele+point
+#      -> _aggregate_winrate()
+#         groupe par modele, calcule n_obs et win_rate
+#
+#   -> compute_category_winrate()
+#      calcule le winrate par modele dans chaque categorie
+#      -> _side_rows()
+#      -> _aggregate_winrate()
+#
+#   -> compute_global_bt()
+#      calcule la force BT globale par modele
+#      -> _bt_single()
+#         coeur BT: init egale -> iterations -> convergence
+#         -> _side_rows()
+#
+#   -> compute_category_bt()
+#      calcule BT par categorie (une boucle par categorie)
+#      -> _bt_single()
+#         -> _side_rows()
+
+
+# ------------------------
 # chargement des duels + categories
 
 def load_matches_with_categories(votes_path: Path, conversations_path: Path) -> pd.DataFrame:
@@ -27,6 +58,8 @@ def load_matches_with_categories(votes_path: Path, conversations_path: Path) -> 
 
     data = votes.merge(conv, on="conversation_pair_id", how="left")
 
+    # ------------------------
+    # version simple du duel: A gagne=1, nul=0.5, A perd=0
     score_a = np.where(
         data["chosen_model_name"] == data["model_a_name"],
         1.0,
@@ -50,6 +83,8 @@ def load_matches_with_categories(votes_path: Path, conversations_path: Path) -> 
 def _side_rows(matches: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
     a = matches[group_cols + ["model_a", "score_a"]].rename(columns={"model_a": "model_name", "score_a": "win_point"})
     b = matches[group_cols + ["model_b", "score_a"]].rename(columns={"model_b": "model_name"})
+    # ------------------------
+    # le score de B est juste le complement de A
     b["win_point"] = 1.0 - b["score_a"]
     b = b.drop(columns=["score_a"])
     return pd.concat([a, b], ignore_index=True)
@@ -83,12 +118,14 @@ def compute_category_winrate(matches: pd.DataFrame, min_obs: int) -> pd.DataFram
 # bradley-terry (MM)
 
 def _bt_single(matches: pd.DataFrame, min_obs: int, max_iter: int = 200, tol: float = 1e-6) -> pd.DataFrame:
+    # ------------------------
+    # on vire les modeles avec trop peu de duels (sinon BT est trop bruité)
     side = _side_rows(matches, group_cols=[])
     counts = side.groupby("model_name").size().rename("n_obs")
     keep = counts[counts >= min_obs].index
     m = matches[matches["model_a"].isin(keep) & matches["model_b"].isin(keep)].copy()
     if m.empty:
-        return pd.DataFrame(columns=["model_name", "n_obs", "bt_score", "bt_strength"])
+        return pd.DataFrame(columns=["model_name", "n_obs", "bt_raw", "bt_strength"])
 
     model_counts = pd.concat([m["model_a"], m["model_b"]]).value_counts().rename("n_obs")
     models = model_counts.index.tolist()
@@ -108,32 +145,41 @@ def _bt_single(matches: pd.DataFrame, min_obs: int, max_iter: int = 200, tol: fl
         comps[j, i] += 1.0
 
     w = wins.sum(axis=1)
+    # ------------------------
+    # etape 0: tout le monde commence "egal"
     p = np.ones(n, dtype=float)
 
     for _ in range(max_iter):
         denom = np.zeros(n, dtype=float)
         for i in range(n):
+            # ------------------------
+            # ici on tient compte de la force courante des adversaires
             den = comps[i] / (p[i] + p)
             den[i] = 0.0
             denom[i] = den.sum()
 
+        # ------------------------
+        # nouveau score BT: brut de victoire + ponderation par adversaires
         p_new = np.where(denom > 0, w / denom, p)
         p_new = np.clip(p_new, 1e-12, None)
+        # normalisation numerique (pas un score "marketing")
         p_new /= p_new.mean()
 
+        # ------------------------
+        # on arrete quand ca bouge presque plus = equilibre
         if np.max(np.abs(np.log(p_new) - np.log(p))) < tol:
             p = p_new
             break
         p = p_new
 
+    # ------------------------
+    # bt_raw = force brute BT, bt_strength = meme info en log
     strength = np.log(p)
-    score = (p / p.max()) * 100.0
-
     out = pd.DataFrame(
         {
             "model_name": models,
             "n_obs": [int(model_counts[mn]) for mn in models],
-            "bt_score": np.round(score, 2),
+            "bt_raw": np.round(p, 6),
             "bt_strength": np.round(strength, 4),
         }
     )
@@ -158,5 +204,5 @@ def compute_category_bt(matches: pd.DataFrame, min_obs: int) -> pd.DataFrame:
         rows.append(bt)
 
     if not rows:
-        return pd.DataFrame(columns=["category", "model_name", "n_obs", "bt_score", "bt_strength"])
+        return pd.DataFrame(columns=["category", "model_name", "n_obs", "bt_raw", "bt_strength"])
     return pd.concat(rows, ignore_index=True).sort_values(["category", "bt_strength"], ascending=[True, False])

@@ -85,7 +85,7 @@ def main() -> None:
             st.info("BT global indisponible avec ce seuil.")
         else:
             top_bt = global_bt.head(top_n)
-            st.plotly_chart(_bar(top_bt, "model_name", "bt_score", "BT score (0-100)"), use_container_width=True)
+            st.plotly_chart(_bar(top_bt, "model_name", "bt_raw", "BT raw (non normalise)"), use_container_width=True)
             st.dataframe(top_bt, use_container_width=True)
 
         st.subheader("2) Bradley-Terry par categorie")
@@ -95,7 +95,7 @@ def main() -> None:
             cats_bt = sorted(category_bt["category"].unique().tolist())
             selected_bt = st.selectbox("Choisis une categorie BT", cats_bt, index=0, key="bt_cat")
             one_bt = category_bt[category_bt["category"] == selected_bt].sort_values("bt_strength", ascending=False).head(top_n)
-            st.plotly_chart(_bar(one_bt, "model_name", "bt_score", "BT score (0-100)"), use_container_width=True)
+            st.plotly_chart(_bar(one_bt, "model_name", "bt_raw", "BT raw (non normalise)"), use_container_width=True)
             st.dataframe(one_bt, use_container_width=True)
 
 
