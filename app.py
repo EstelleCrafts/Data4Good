@@ -90,13 +90,16 @@ def main() -> None:
     p1, p2 = st.tabs(["Comparaison modeles", "Materiaux & hypotheses"])
 
     with p1:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Duels", int(base.shape[0]))
-        c2.metric("Modeles", int(global_df["model_name"].nunique()))
-        c3.metric("Categories", int(cat_df["category"].nunique()) if not cat_df.empty else 0)
-
         t1, t2 = st.tabs(["Global", "Par categorie"])
         with t1:
+            g_duels = int(round(global_df["n_obs"].sum() / 2))
+            g_models = int(global_df["model_name"].nunique())
+            g_categories = int(cat_df["category"].nunique()) if not cat_df.empty else 0
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Duels (global)", g_duels)
+            c2.metric("Modeles (global)", g_models)
+            c3.metric("Categories dispo", g_categories)
+
             st.caption(corr_caption(global_df, metric, "global"))
             top = global_df.sort_values(metric, ascending=False).head(top_n)
             st.plotly_chart(bar(top, metric), use_container_width=True)
@@ -110,6 +113,13 @@ def main() -> None:
             else:
                 cat = st.selectbox("Categorie", sorted(cat_df["category"].unique().tolist()))
                 cat_slice = cat_df[cat_df["category"] == cat]
+                c_duels = int(round(cat_slice["n_obs"].sum() / 2))
+                c_models = int(cat_slice["model_name"].nunique())
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Duels (categorie)", c_duels)
+                c2.metric("Modeles (categorie)", c_models)
+                c3.metric("Categorie", cat)
+
                 st.caption(corr_caption(cat_slice, metric, f"categorie '{cat}'"))
                 one = cat_slice.sort_values(metric, ascending=False).head(top_n)
                 st.plotly_chart(bar(one, metric), use_container_width=True)
