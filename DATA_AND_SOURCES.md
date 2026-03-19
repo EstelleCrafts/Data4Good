@@ -64,6 +64,18 @@
   - duree de vie des serveurs (proxy infra IA),
   - limites pour une metrique \"metal par requete\".
 
+### `Data/materials_per_request_sources.md`
+- Note de sourcing specifique a la metrique \"materiaux par requete\":
+  - quelles sources sont retenues,
+  - pourquoi,
+  - limites explicites.
+
+### `Data/assumptions_materials_per_request.csv`
+- Table d'hypotheses scenario `low/central/high` pour calculer une fourchette:
+  - `lifetime_years`, `utilization`, `throughput_value`,
+  - `recycling_rate_effective`,
+  - `critical_mass_g`, `strategic_share_in_critical`.
+
 ## 3) Fichiers code qui produisent/consomment la data
 
 ### `engine.py`

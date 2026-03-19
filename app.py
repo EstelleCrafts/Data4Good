@@ -19,7 +19,6 @@ from engine import load_matches, wr_eco, bt, merge_metrics
 DATA = Path("Data")
 VOTES = DATA / "votes.parquet"
 CONV = DATA / "conversations.parquet"
-CRMA = DATA / "eu_crma_materials.csv"
 
 
 @st.cache_data(show_spinner=False)
@@ -29,13 +28,6 @@ def build_tables():
     g = merge_metrics(wr_eco(m, by_cat=False), bt(m, by_cat=False), by_cat=False)
     c = merge_metrics(wr_eco(m, by_cat=True), bt(m, by_cat=True), by_cat=True)
     return m, g, c
-
-
-@st.cache_data(show_spinner=False)
-def load_crma() -> pd.DataFrame:
-    if not CRMA.exists():
-        return pd.DataFrame()
-    return pd.read_csv(CRMA)
 
 
 def bar(df, metric: str):
@@ -62,6 +54,22 @@ def scatter(df, metric: str):
     return fig
 
 
+def corr_caption(df: pd.DataFrame, metric: str, scope: str) -> str:
+    val = df[metric].corr(df["eco_kwh_mean"], method="pearson")
+    if pd.isna(val):
+        return f"Correlation {scope}: non calculable (pas assez de variance)."
+    return f"Correlation {scope} ({metric} vs cout energetique): {val:.2f}."
+
+
+def corr_memo() -> None:
+    st.caption(
+        "Memo correlation (Pearson, |r|) : <0.2 tres faible | 0.2-0.4 faible | 0.4-0.6 moderee | "
+        "0.6-0.8 forte | >=0.8 tres forte. "
+        "Si negatif: + le modele est performant, moins il est efficace. "
+        "Si positif: + le modele est performant, + il est efficace."
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="Comparaison modeles", layout="wide")
     st.title("Comparaison modeles: Winrate + BT + cout ecologique")
@@ -71,7 +79,6 @@ def main() -> None:
         st.stop()
 
     base, global_df, cat_df = build_tables()
-    crma = load_crma()
     if global_df.empty:
         st.warning("Pas de donnees exploitables")
         st.stop()
@@ -90,55 +97,55 @@ def main() -> None:
 
         t1, t2 = st.tabs(["Global", "Par categorie"])
         with t1:
+            st.caption(corr_caption(global_df, metric, "global"))
             top = global_df.sort_values(metric, ascending=False).head(top_n)
             st.plotly_chart(bar(top, metric), use_container_width=True)
             st.plotly_chart(scatter(top, metric), use_container_width=True)
             st.dataframe(top[["model_name", "n_obs", "win_rate", "bt_raw", "bt_strength", "eco_kwh_mean", "eco_kwh_total"]], use_container_width=True)
+            corr_memo()
 
         with t2:
             if cat_df.empty:
                 st.info("Pas de categories exploitables")
             else:
                 cat = st.selectbox("Categorie", sorted(cat_df["category"].unique().tolist()))
-                one = cat_df[cat_df["category"] == cat].sort_values(metric, ascending=False).head(top_n)
+                cat_slice = cat_df[cat_df["category"] == cat]
+                st.caption(corr_caption(cat_slice, metric, f"categorie '{cat}'"))
+                one = cat_slice.sort_values(metric, ascending=False).head(top_n)
                 st.plotly_chart(bar(one, metric), use_container_width=True)
                 st.plotly_chart(scatter(one, metric), use_container_width=True)
                 st.dataframe(one[["model_name", "n_obs", "win_rate", "bt_raw", "bt_strength", "eco_kwh_mean", "eco_kwh_total"]], use_container_width=True)
+                corr_memo()
 
     with p2:
-        st.caption("Premier jet: 34/17 CRMA + calcul simple matiere/requete avec hypotheses explicites.")
-        if crma.empty:
-            st.info("Fichier manquant: Data/eu_crma_materials.csv")
-            st.stop()
+        st.markdown(
+            """
+### Question
+Vas t'on etre a cours de materiaux dans les prochaines annees a cause de l'IA ?
+En partant du principe qu'on utilisera une technologie similaire dans les années à venir. 
 
-        x1, x2, x3 = st.columns(3)
-        x1.metric("Matieres critiques UE", int(crma["is_critical_ue"].sum()))
-        x2.metric("Matieres strategiques UE", int(crma["is_strategic_ue"].sum()))
-        x3.metric("Total unique (union)", int(crma["material_name"].nunique()))
+### Data 
+1. Combien de materiaux contient une puce IA : NVDIA H100 souvent utilisée comme référence
+2. Comment ces materiaux evoluent avec le recyclage
+3. Comment le recyclage de ces matériaux évolue t'il dans le temps ? 
+3. Quel est le stock de ces materiaux a l'echelle mondiale ? 
+4. Quelle est la duree de vie d'une puce et sa \"duree utile\" de puissance de calcul.
+5. Combien les modeles consomment en moyenne. 
+6. Comment évolue la demande pour l'IA ?
 
-        st.dataframe(crma.sort_values(["is_strategic_ue", "is_critical_ue", "material_name"], ascending=[False, False, True]), use_container_width=True)
 
-        st.subheader("Simulation rapide: matiere vierge par requete")
-        s1, s2, s3 = st.columns(3)
-        lifetime_years = s1.slider("Duree de vie infra (ans)", 1.0, 8.0, 5.0, 0.5)
-        req_per_sec = s2.number_input("Requetes par seconde (infra)", min_value=0.0001, value=0.25, step=0.05)
-        utilization = s3.slider("Taux d'utilisation", 0.05, 1.0, 0.5, 0.05)
+### Data ?
+2. **Stock mondial par matiere:** via USGS (reserves par commodite, pas un total unique). a priori ? 
+3. **Conso moyenne des modeles dans notre app:** deja calculee via `eco_kwh_mean` depuis `conversations.parquet`.
 
-        m1, m2, m3 = st.columns(3)
-        critical_mass_g = m1.number_input("Masse totale matieres critiques (g)", min_value=0.0, value=250.0, step=10.0)
-        strategic_share = m2.slider("Part strategique dans ces matieres", 0.0, 1.0, 0.6, 0.05)
-        recycling_rate = m3.slider("Taux recyclage effectif", 0.0, 0.95, 0.2, 0.05)
+### Sources principales
+- UE (34 critiques / 17 strategiques): https://eur-lex.europa.eu/eli/reg/2024/1252/oj/eng  
+- USGS (reserves mondiales par matiere): https://www.usgs.gov/publications/mineral-commodity-summaries-2025  
 
-        requests_lifetime = req_per_sec * utilization * 365.25 * 24 * 3600 * lifetime_years
-        virgin_critical_mg_per_req = ((critical_mass_g * (1 - recycling_rate)) * 1000.0) / requests_lifetime if requests_lifetime > 0 else 0.0
-        virgin_strategic_mg_per_req = virgin_critical_mg_per_req * strategic_share
-
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Requetes vie entiere (estime)", f"{requests_lifetime:,.0f}")
-        r2.metric("Critiques vierges / requete (mg)", f"{virgin_critical_mg_per_req:.6f}")
-        r3.metric("Strategiques vierges / requete (mg)", f"{virgin_strategic_mg_per_req:.6f}")
-
-        st.caption("Formule: matiere_vierge/requete = (masse * (1-recyclage)) / requetes_vie_entiere")
+### Conclusion dans le délai de réalisation du projet 
+    - Impossible d'estimer correctement la demande future en materiaux pour l'IA (evolution de la puissance de calcul, du recyclage, des modeles, etc.)
+            """
+        )
 
 
 if __name__ == "__main__":
